@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QCM Outils de développement sous Linux - IHEC Carthage</title>
+<script>
+// ===================== RÉGLAGES (à compléter, voir le guide) =====================
+const CLIENT_ID = 'COLLER_ICI_VOTRE_CLIENT_ID.apps.googleusercontent.com';
+const API_URL   = 'COLLER_ICI_URL_APPS_SCRIPT';   // se termine par /exec
+const DEMANDER_CODE = false;                       // true si CODE_EXAMEN est défini dans Code.gs
+const NB_QUESTIONS = 60, DUREE_MIN = 45;           // affichés dans les règles ; DUREE_MIN doit égaler celui de Code.gs
+// =================================================================================
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{--bleu:#1F3A5F;--teal:#1B7F8C;--orange:#D9731A;--rouge:#B03A48;--vert:#2E8B57;--fond:#F3F6F9;--carte:#fff;--texte:#1B2A41;--gris:#6B7A90;--bord:#D5DEE8}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--fond);color:var(--texte);font-size:17px;line-height:1.45;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input{-webkit-user-select:text;user-select:text;font:inherit}
+header{background:var(--bleu);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5}
+header h1{font-size:17px;margin:0;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chrono{font-variant-numeric:tabular-nums;font-weight:700;font-size:22px;background:rgba(255,255,255,.14);padding:4px 12px;border-radius:8px}
+#chrono.alerte{background:var(--rouge)}
+#sortiesBadge{font-size:13px;background:rgba(255,255,255,.14);padding:4px 10px;border-radius:8px;white-space:nowrap}
+main{max-width:860px;margin:0 auto;padding:20px 16px 60px}
+.carte{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:22px;margin-bottom:16px}
+h2{margin:0 0 12px;font-size:22px;color:var(--bleu)}
+label{display:block;font-weight:600;margin:14px 0 4px}
+input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--bord);border-radius:8px;background:#fff;color:var(--texte)}
+input:focus-visible,button:focus-visible{outline:3px solid var(--teal);outline-offset:2px}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--bord);background:#fff;color:var(--texte);padding:10px 18px}
+button.principal{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600}
+button.danger{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}
+ul.regles{padding-left:20px;margin:8px 0}
+ul.regles li{margin:6px 0}
+.err{color:var(--rouge);font-weight:600;margin-top:12px;min-height:1.4em}
+.muted{color:var(--gris);font-size:15px}
+.demo{background:var(--orange);color:#fff;text-align:center;padding:6px;font-weight:600;font-size:15px}
+.cache{display:none!important}
+#qNum{color:var(--gris);font-weight:600;font-size:15px;margin-bottom:6px}
+#qTexte{font-size:20px;font-weight:600;margin:0 0 16px;overflow-wrap:anywhere}
+.prop{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;margin:10px 0;padding:14px;border:2px solid var(--bord);background:#fff;overflow-wrap:anywhere}
+.prop .lettre{flex:none;width:30px;height:30px;border-radius:50%;background:var(--fond);display:flex;align-items:center;justify-content:center;font-weight:700}
+.prop.choisie{border-color:var(--teal);background:#E6F3F5}
+.prop.choisie .lettre{background:var(--teal);color:#fff}
+.nav{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;margin-top:18px}
+#grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:6px}
+#grille button{padding:8px 0;font-size:14px;font-weight:600}
+#grille button.fait{background:#E6F3F5;border-color:var(--teal)}
+#grille button.marque{background:#FBE9D7;border-color:var(--orange)}
+#grille button.courant{outline:3px solid var(--bleu)}
+.legende{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;color:var(--gris);margin-top:10px}
+.voile{position:fixed;inset:0;background:rgba(20,30,48,.82);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20}
+.voile .carte{max-width:520px;width:100%;margin:0}
+.voile h2.rouge{color:var(--rouge)}
+.gros{font-size:44px;font-weight:700;color:var(--bleu);margin:8px 0}
+@media print{body{display:none}}
+@media (max-width:520px){header h1{font-size:14px}#chrono{font-size:18px}#qTexte{font-size:18px}.carte{padding:16px}}
+</style>
+</head>
+<body>
+<div id="bandeDemo" class="demo cache">Mode démonstration : 6 questions d'essai, rien n'est enregistré</div>
+<header>
+  <h1>QCM Outils de développement sous Linux (intro au DevOps)</h1>
+  <span id="sortiesBadge" class="cache"></span>
+  <span id="chrono" class="cache" aria-live="off">45:00</span>
+</header>
+
+<main>
+  <!-- Écran 1 : connexion -->
+  <section id="eConnexion" class="carte">
+    <h2>Connexion</h2>
+    <p>Connectez-vous avec votre compte Gmail pour accéder au test.</p>
+    <div id="boutonGoogle"></div>
+    <button id="boutonDemo" class="principal cache" type="button">Entrer en mode démonstration</button>
+    <p class="err" id="errConnexion" role="alert"></p>
+  </section>
+
+  <!-- Écran 2 : identité et règles -->
+  <section id="eIdentite" class="carte cache">
+    <h2>Vos informations</h2>
+    <p class="muted">Connecté : <strong id="emailAffiche"></strong></p>
+    <form id="formIdentite" autocomplete="off">
+      <label for="nom">Nom</label><input id="nom" type="text" maxlength="60" required>
+      <label for="prenom">Prénom</label><input id="prenom" type="text" maxlength="60" required>
+      <label for="cin">Numéro de CIN (8 chiffres)</label><input id="cin" type="text" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" required>
+      <div id="blocCode" class="cache"><label for="code">Code d'examen (donné en salle)</label><input id="code" type="text" maxlength="30"></div>
+      <h2 style="margin-top:22px">Règles du test</h2>
+      <ul class="regles">
+        <li><strong><span id="rNb">60</span> questions</strong>, une seule bonne réponse par question, <strong><span id="rMin">45</span> minutes</strong>.</li>
+        <li>Le compte à rebours démarre dès que vous cliquez sur « Commencer » et <strong>ne s'arrête pas</strong>.</li>
+        <li>Le test passe en plein écran. <strong>Ne quittez pas la fenêtre</strong> : chaque sortie (autre onglet, autre application, sortie du plein écran) est comptée et signalée à l'enseignant. À la <strong id="maxTxt">3</strong>e sortie, votre copie est remise automatiquement.</li>
+        <li>Le copier-coller, le clic droit et l'impression sont désactivés.</li>
+        <li>Une seule tentative par étudiant. À la fin du temps, la copie est remise automatiquement.</li>
+      </ul>
+      <label style="font-weight:400;display:flex;gap:10px;align-items:flex-start"><input id="accepte" type="checkbox" required style="margin-top:5px"> <span>J'ai lu les règles et je suis prêt(e) à commencer.</span></label>
+      <p class="err" id="errIdentite" role="alert"></p>
+      <button class="principal" id="btnCommencer" type="submit">Commencer le test</button>
+    </form>
+  </section>
+
+  <!-- Écran 3 : test -->
+  <section id="eTest" class="cache">
+    <div class="carte">
+      <div id="qNum"></div>
+      <p id="qTexte"></p>
+      <div id="props"></div>
+      <div class="nav">
+        <button type="button" id="btnPrec">Précédente</button>
+        <button type="button" id="btnMarquer">Marquer pour revoir</button>
+        <button type="button" id="btnSuiv" class="principal">Suivante</button>
+      </div>
+    </div>
+    <div class="carte">
+      <div id="grille" aria-label="Navigation entre les questions"></div>
+      <div class="legende"><span id="compteur"></span><span>Bleu clair : répondue</span><span>Orange : à revoir</span></div>
+      <div class="nav"><span></span><button type="button" id="btnRemettre" class="danger">Terminer et remettre</button></div>
+    </div>
+  </section>
+
+  <!-- Écran 4 : fin -->
+  <section id="eFin" class="carte cache">
+    <h2>Test terminé</h2>
+    <p id="finTexte">Votre copie a bien été enregistrée.</p>
+    <div id="finNote" class="cache"><div class="gros" id="noteVal"></div><p class="muted" id="scoreVal"></p></div>
+    <p class="muted">Vous pouvez fermer cette page.</p>
+  </section>
+</main>
+
+<!-- Fenêtres superposées -->
+<div id="vSortie" class="voile cache" role="alertdialog" aria-labelledby="vSortieT">
+  <div class="carte"><h2 class="rouge" id="vSortieT">Sortie de la fenêtre détectée</h2>
+    <p id="vSortieTxt"></p><p class="muted">Le chronomètre continue de tourner.</p>
+    <button type="button" class="principal" id="btnRetour">Revenir au test</button></div>
+</div>
+<div id="vConfirme" class="voile cache" role="alertdialog" aria-labelledby="vConfT">
+  <div class="carte"><h2 id="vConfT">Remettre votre copie ?</h2>
+    <p id="vConfTxt"></p><p>Cette action est définitive.</p>
+    <div class="nav"><button type="button" id="btnAnnuler">Continuer le test</button><button type="button" class="danger" id="btnConfirmer">Remettre définitivement</button></div></div>
+</div>
+<div id="vEnvoi" class="voile cache" role="alert">
+  <div class="carte"><h2>Envoi de votre copie</h2><p id="vEnvoiTxt">Veuillez patienter, ne fermez pas la page.</p></div>
+</div>
+
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+$('rNb').textContent=NB_QUESTIONS; $('rMin').textContent=DUREE_MIN; $('chrono').textContent=String(DUREE_MIN).padStart(2,'0')+':00';
+const configure = !/COLLER_ICI/.test(CLIENT_ID) && !/COLLER_ICI/.test(API_URL);
+const DEMO = !configure || new URLSearchParams(location.search).has('demo');
+
+let jeton = null, etat = null;   // etat = données du test en cours
+let enCours = false, envoiEnCours = false, dernierSortie = 0, copies = 0, pleinEcranActif = false;
+let tChrono = null, tSauve = null;
+
+// ---------- Mode démonstration (aucun serveur) ----------
+const DEMO_Q = [
+  ["Quelle commande Linux liste les fichiers d'un dossier ?", ["cd", "pwd", "rm", "ls"]],
+  ["Quelle commande rend un script exécutable ?", ["chmod +x", "chown +x", "exec", "sudo -x"]],
+  ["Que fait « ls > tmp » ?", ["Elle supprime tmp", "Elle écrit la liste des fichiers dans tmp", "Elle affiche tmp", "Elle liste le dossier tmp"]],
+  ["Quel outil sert à gérer les versions d'un projet ?", ["Excel", "Paint", "Git", "Word"]],
+  ["Que fait « git add » ?", ["Envoie vers GitHub", "Place les fichiers dans la zone de préparation", "Supprime un commit", "Crée une branche"]],
+  ["Quelle option de gcc prépare un programme pour GDB ?", ["-g", "-o", "-c", "-s"]]
+];
+function apiDemo(req){
+  if(req.action==='start') return {ok:true, session:'demo', email:'demo@gmail.com', fin:Date.now()+DUREE_MIN*60000, maintenant:Date.now(),
+    maxSorties:3, sorties:0, reponses:{}, questions:DEMO_Q.map((q,i)=>({id:i,q:q[0],p:q[1].map((t,k)=>({i:k,t:t}))}))};
+  if(req.action==='submit') return {ok:true, score:Object.keys(req.reponses).length, total:DEMO_Q.length, note:0, demo:true};
+  return {ok:true};
+}
+
+async function api(req){
+  if(DEMO) return apiDemo(req);
+  const r = await fetch(API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(req)});
+  if(!r.ok) throw new Error('Serveur injoignable ('+r.status+').');
+  return r.json();
+}
+
+function montrer(id){ ['eConnexion','eIdentite','eTest','eFin'].forEach(e => $(e).classList.toggle('cache', e!==id)); window.scrollTo(0,0); }
+
+// ---------- Connexion Google ----------
+function emailDuJeton(j){
+  try{ const p = j.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    return JSON.parse(decodeURIComponent(escape(atob(p)))).email || ''; }catch(e){ return ''; }
+}
+function apresConnexion(j, email){
+  jeton = j; $('emailAffiche').textContent = email;
+  if(DEMANDER_CODE) $('blocCode').classList.remove('cache');
+  montrer('eIdentite'); $('nom').focus();
+}
+function initGoogle(essais){
+  if(DEMO){ $('bandeDemo').classList.remove('cache'); $('boutonDemo').classList.remove('cache');
+    $('boutonDemo').onclick = () => apresConnexion('demo','demo@gmail.com'); return; }
+  if(!(window.google && google.accounts && google.accounts.id)){
+    if(essais>40){ $('errConnexion').textContent = "Le bouton Google ne se charge pas. Vérifiez votre connexion Internet et rechargez la page."; return; }
+    return setTimeout(() => initGoogle(essais+1), 250);
+  }
+  google.accounts.id.initialize({client_id:CLIENT_ID, callback: rep => apresConnexion(rep.credential, emailDuJeton(rep.credential))});
+  google.accounts.id.renderButton($('boutonGoogle'), {theme:'filled_blue', size:'large', text:'signin_with', locale:'fr'});
+}
+
+// ---------- Démarrage ----------
+$('cin').addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g,'').slice(0,8); });
+$('formIdentite').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const err = $('errIdentite'); err.textContent = '';
+  if(!/^\d{8}$/.test($('cin').value)){ err.textContent = 'Le CIN doit contenir exactement 8 chiffres.'; return; }
+  const btn = $('btnCommencer'); btn.disabled = true; btn.textContent = 'Chargement...';
+  entrerPleinEcran();   // dans le geste de clic, sinon le navigateur refuse
+  try{
+    const rep = await api({action:'start', jeton:jeton, nom:$('nom').value, prenom:$('prenom').value, cin:$('cin').value, code:$('code').value});
+    if(!rep.ok) throw new Error(rep.erreur || 'Erreur inconnue.');
+    lancer(rep);
+  }catch(e){
+    sortirPleinEcran();
+    err.textContent = /Failed to fetch|NetworkError/i.test(e.message) ? 'Connexion au serveur impossible. Vérifiez Internet et réessayez.' : e.message;
+    btn.disabled = false; btn.textContent = 'Commencer le test';
+  }
+});
+
+function lancer(rep){
+  etat = {session:rep.session, fin:rep.fin, decalage:rep.maintenant - Date.now(), questions:rep.questions,
+    reponses:rep.reponses || {}, marques:{}, courant:0, sorties:rep.sorties || 0, max:rep.maxSorties || 3};
+  try{ const loc = JSON.parse(localStorage.getItem('qcm_'+etat.session) || 'null');   // copie locale de secours
+    if(loc && typeof loc === 'object') Object.keys(loc).forEach(k => { if(etat.reponses[k] === undefined) etat.reponses[k] = loc[k]; }); }catch(e){}
+  $('maxTxt').textContent = etat.max;
+  construireGrille(); afficher(0); montrer('eTest');
+  $('chrono').classList.remove('cache'); $('sortiesBadge').classList.remove('cache'); majSorties();
+  enCours = true; dernierSortie = Date.now();   // ignore les événements liés au démarrage
+  tic(); tChrono = setInterval(tic, 500);
+  tSauve = setInterval(sauvegarder, 60000 + Math.floor(Math.random()*15000));
+}
+
+// ---------- Affichage des questions ----------
+function construireGrille(){
+  const g = $('grille'); g.textContent = '';
+  etat.questions.forEach((q,i) => { const b = document.createElement('button'); b.type='button'; b.textContent = i+1;
+    b.setAttribute('aria-label','Question '+(i+1)); b.onclick = () => afficher(i); g.appendChild(b); });
+}
+function afficher(i){
+  etat.courant = i; const q = etat.questions[i];
+  $('qNum').textContent = 'Question ' + (i+1) + ' sur ' + etat.questions.length;
+  $('qTexte').textContent = q.q;
+  const box = $('props'); box.textContent = '';
+  q.p.forEach((p,k) => {
+    const b = document.createElement('button'); b.type='button'; b.className = 'prop' + (etat.reponses[q.id] === p.i ? ' choisie' : '');
+    b.setAttribute('aria-pressed', etat.reponses[q.id] === p.i);
+    const l = document.createElement('span'); l.className='lettre'; l.textContent = 'ABCD'[k];
+    const t = document.createElement('span'); t.textContent = p.t;
+    b.append(l,t); b.onclick = () => { etat.reponses[q.id] = p.i; secoursLocal(); afficher(i); };
+    box.appendChild(b);
+  });
+  $('btnPrec').disabled = i === 0;
+  $('btnSuiv').disabled = i === etat.questions.length-1;
+  $('btnMarquer').textContent = etat.marques[q.id] ? 'Retirer la marque' : 'Marquer pour revoir';
+  majGrille();
+}
+function majGrille(){
+  const bs = $('grille').children; let faites = 0;
+  etat.questions.forEach((q,i) => { const f = etat.reponses[q.id] !== undefined; if(f) faites++;
+    bs[i].className = (f ? 'fait ' : '') + (etat.marques[q.id] ? 'marque ' : '') + (i === etat.courant ? 'courant' : ''); });
+  $('compteur').textContent = faites + ' / ' + etat.questions.length + ' répondues';
+}
+$('btnPrec').onclick = () => afficher(Math.max(0, etat.courant-1));
+$('btnSuiv').onclick = () => afficher(Math.min(etat.questions.length-1, etat.courant+1));
+$('btnMarquer').onclick = () => { const id = etat.questions[etat.courant].id; etat.marques[id] = !etat.marques[id]; afficher(etat.courant); };
+function secoursLocal(){ try{ localStorage.setItem('qcm_'+etat.session, JSON.stringify(etat.reponses)); }catch(e){} }
+
+// ---------- Chronomètre ----------
+function tic(){
+  const reste = Math.max(0, etat.fin - (Date.now() + etat.decalage));
+  const s = Math.ceil(reste/1000), m = Math.floor(s/60);
+  $('chrono').textContent = String(m).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+  $('chrono').classList.toggle('alerte', s <= 300);
+  if(reste <= 0 && enCours) remettre('temps écoulé');
+}
+
+// ---------- Sauvegarde et remise ----------
+async function sauvegarder(){
+  if(!enCours) return;
+  try{ const r = await api({action:'save', session:etat.session, reponses:etat.reponses, sorties:etat.sorties});
+    if(r && r.termine) finir({}); }catch(e){}
+}
+$('btnRemettre').onclick = () => {
+  const n = etat.questions.filter(q => etat.reponses[q.id] === undefined).length;
+  $('vConfTxt').textContent = n ? 'Attention : ' + n + ' question(s) sans réponse.' : 'Vous avez répondu à toutes les questions.';
+  $('vConfirme').classList.remove('cache'); $('btnAnnuler').focus();
+};
+$('btnAnnuler').onclick = () => $('vConfirme').classList.add('cache');
+$('btnConfirmer').onclick = () => remettre("remise par l'étudiant");
+
+async function remettre(motif){
+  if(envoiEnCours || !etat) return;
+  envoiEnCours = true; enCours = false;
+  clearInterval(tChrono); clearInterval(tSauve);
+  ['vConfirme','vSortie'].forEach(v => $(v).classList.add('cache'));
+  $('vEnvoi').classList.remove('cache');
+  let essai = 0;
+  for(;;){
+    try{
+      const r = await api({action:'submit', session:etat.session, reponses:etat.reponses, sorties:etat.sorties, copies:copies, motif:motif});
+      if(r.ok){ finir(r, motif); return; }
+      throw new Error(r.erreur || 'Erreur');
+    }catch(e){
+      essai++;
+      $('vEnvoiTxt').textContent = "L'envoi a échoué (essai " + essai + "). Nouvel essai automatique dans 5 secondes. Ne fermez pas la page : vos réponses sont conservées.";
+      await new Promise(ok => setTimeout(ok, 5000));
+    }
+  }
+}
+function finir(r, motif){
+  enCours = false; clearInterval(tChrono); clearInterval(tSauve);
+  try{ localStorage.removeItem('qcm_'+etat.session); }catch(e){}
+  sortirPleinEcran();
+  ['vEnvoi','vSortie','vConfirme'].forEach(v => $(v).classList.add('cache'));
+  $('chrono').classList.add('cache'); $('sortiesBadge').classList.add('cache');
+  if(motif && motif !== "remise par l'étudiant") $('finTexte').textContent = 'Votre copie a été remise automatiquement (' + motif + ') et bien enregistrée.';
+  if(r && r.demo){ $('finTexte').textContent = 'Fin de la démonstration : ' + r.score + ' réponse(s) cochée(s) sur ' + r.total + '. Rien n\'a été enregistré.'; }
+  else if(r && r.note !== undefined){ $('noteVal').textContent = String(r.note).replace('.',',') + ' / 20';
+    $('scoreVal').textContent = r.score + ' bonnes réponses sur ' + r.total; $('finNote').classList.remove('cache'); }
+  montrer('eFin');
+}
+
+// ---------- Surveillance : sorties de fenêtre ----------
+function majSorties(){ $('sortiesBadge').textContent = 'Sorties : ' + etat.sorties + ' / ' + etat.max; }
+function sortie(){
+  if(!enCours) return;
+  const t = Date.now(); if(t - dernierSortie < 2000) return;   // un seul décompte par sortie
+  dernierSortie = t; etat.sorties++; majSorties();
+  if(etat.sorties >= etat.max){ remettre('sorties de fenêtre'); return; }
+  const reste = etat.max - etat.sorties;
+  $('vSortieTxt').textContent = 'Sortie n° ' + etat.sorties + ' sur ' + etat.max + ' autorisées. ' +
+    (reste === 1 ? 'À la prochaine sortie, votre copie sera remise automatiquement.' : 'Encore ' + reste + ' sorties et votre copie sera remise automatiquement.');
+  $('vSortie').classList.remove('cache');
+  sauvegarder();
+}
+document.addEventListener('visibilitychange', () => { if(document.hidden) sortie(); });
+window.addEventListener('blur', sortie);
+document.addEventListener('fullscreenchange', () => {
+  if(document.fullscreenElement){ pleinEcranActif = true; }
+  else if(pleinEcranActif){ pleinEcranActif = false; sortie(); }
+});
+$('btnRetour').onclick = () => { $('vSortie').classList.add('cache'); dernierSortie = Date.now(); entrerPleinEcran(); };
+function entrerPleinEcran(){ try{ const el = document.documentElement; const f = el.requestFullscreen || el.webkitRequestFullscreen;
+  if(f){ const p = f.call(el); if(p && p.catch) p.catch(()=>{}); } }catch(e){} }
+function sortirPleinEcran(){ pleinEcranActif = false; try{ if(document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(()=>{}); }catch(e){} }
+
+// ---------- Blocage copier-coller, clic droit, raccourcis ----------
+['copy','cut','paste','contextmenu','dragstart'].forEach(ev => document.addEventListener(ev, e => {
+  if(ev !== 'contextmenu' && ev !== 'dragstart' && enCours) copies++;
+  e.preventDefault();
+}));
+document.addEventListener('selectstart', e => { if(!(e.target && e.target.tagName === 'INPUT')) e.preventDefault(); });
+document.addEventListener('keydown', e => {
+  const k = (e.key || '').toLowerCase();
+  if(((e.ctrlKey || e.metaKey) && ['c','v','x','a','p','s','u'].includes(k) && !(k==='a' && e.target.tagName==='INPUT')) || k === 'f12'){
+    if(enCours && ['c','v','x'].includes(k)) copies++;
+    e.preventDefault();
+  }
+});
+window.addEventListener('beforeunload', e => { if(enCours){ e.preventDefault(); e.returnValue = ''; } });
+
+initGoogle(0);
+})();
+</script>
+</body>
+</html>
